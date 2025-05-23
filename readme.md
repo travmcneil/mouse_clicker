@@ -22,15 +22,13 @@ This is a versatile Python-based mouse automation tool with a user-friendly grap
 
 For users who want to try the application immediately without installing Python or setting up the development environment, a pre-compiled executable is available.
 
-You can find the `mouse_clicker.exe` file directly in this Git repository (e.g., in a `releases` or `bin` folder if structured, or directly in the root depending on repository setup).
+You can find the `mouse_clicker.exe` file directly in this Git repository.
 
 ### How to Use the Executable:
 
 1.  **Download/Clone:** Clone or download this Git repository.
 2.  **Locate:** Find the `mouse_clicker.exe` file within the repository.
 3.  **Run:** Double-click `mouse_clicker.exe` to start the application.
-4.  **Administrator Privileges (Recommended):** Due to the nature of mouse and keyboard automation, it is highly recommended to **right-click `mouse_clicker.exe` and select "Run as administrator"** for reliable functionality across all applications.
-
 ---
 
 ---
@@ -53,5 +51,5 @@ You can find the `mouse_clicker.exe` file directly in this Git repository (e.g.,
 Before running the script (if you choose not to use the executable), ensure you have Python installed (Python 3.x is recommended). Then, install the necessary libraries using pip:
 
 ```bash
-pip install pyautogui keyboard
+pip install pyautogui keyboard tkinter
 ```
