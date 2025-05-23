@@ -11,6 +11,7 @@ from tkinter import ttk
 locations = []
 cycle_wait_time = 13  # Default timing in seconds between full cycles of locations
 click_wait_time = 0.2 # Default timing in seconds between individual clicks
+num_cycles = -1       # NEW: Default to -1 for infinite cycles
 
 stop_flag = False
 mouse_thread = None
@@ -22,13 +23,14 @@ coordinate_entry_frames = [] # To hold references to frames containing entries
 coordinate_entries = [] # To hold references to the actual entry widgets
 action_type_vars = [] # To hold references to StringVar for primary action dropdowns
 
-# NEW: Variables for secondary action dropdown (Combobox)
+# Variables for secondary action dropdown (Combobox)
 secondary_action_dropdowns_vars = [] # List of StringVar for the secondary dropdowns
 secondary_action_dropdowns_widgets = [] # List of Combobox widgets (for visibility control)
 
 # GUI widget references (will be assigned in create_gui)
 timing_entry = None
 click_timing_entry = None
+num_cycles_entry = None # NEW: Reference for the number of cycles entry
 coordinate_input_frame = None
 
 # --- Core Logic Functions ---
@@ -50,11 +52,13 @@ def check_keypress():
 
 def mouse_actions_thread():
     """Moves mouse, performs actions, waits, repeats, and stops when stop_flag is True."""
-    global stop_flag, cycle_wait_time, click_wait_time
+    global stop_flag, cycle_wait_time, click_wait_time, num_cycles
     stop_flag = False # Reset stop flag when starting
+    cycle_count = 0   # Initialize cycle counter
+
     try:
-        while not stop_flag:
-            # Unpack primary and secondary action types
+        # Loop continues as long as not stopped AND (infinite cycles OR current cycle count is less than target)
+        while not stop_flag and (num_cycles == -1 or cycle_count < num_cycles):
             for x, y, primary_action, secondary_action in locations:
                 pyautogui.moveTo(x, y, duration=0.2)
 
@@ -64,10 +68,10 @@ def mouse_actions_thread():
                 elif primary_action == "Double-Click":
                     pyautogui.doubleClick()
                     print(f"Double-clicked at: {x}, {y}")
-                    if secondary_action == "Copy": # Check secondary action
+                    if secondary_action == "Copy":
                         pyautogui.hotkey('ctrl', 'c')
                         print(f"  -> And copied at: {x}, {y}")
-                    elif secondary_action == "Paste": # Check secondary action
+                    elif secondary_action == "Paste":
                         pyautogui.hotkey('ctrl', 'v')
                         print(f"  -> And pasted at: {x}, {y}")
                 elif primary_action == "Copy":
@@ -81,8 +85,17 @@ def mouse_actions_thread():
 
                 time.sleep(click_wait_time)
 
+            cycle_count += 1
+            print(f"Cycle {cycle_count} completed.")
+
             if stop_flag:
                 break
+            
+            # If we've completed the last requested cycle, break before waiting
+            if num_cycles != -1 and cycle_count >= num_cycles:
+                print(f"Completed all {num_cycles} cycles.")
+                break 
+            
             time.sleep(cycle_wait_time)
 
     except pyautogui.FailSafeException:
@@ -90,8 +103,8 @@ def mouse_actions_thread():
     except Exception as e:
         print(f"An error occurred in mouse actions: {e}")
     finally:
-        if not stop_flag:
-            stop_script_internal()
+        if not stop_flag: # If it stopped due to finishing cycles or error, not explicit stop
+            stop_script_internal() # Ensure GUI reflects stopped state
         print("Mouse actions thread finished.")
 
 
@@ -102,7 +115,7 @@ def update_locations_from_gui():
     for i in range(len(coordinate_entries)):
         entry = coordinate_entries[i]
         primary_action_var = action_type_vars[i]
-        secondary_action_var = secondary_action_dropdowns_vars[i] # Get the StringVar for secondary dropdown
+        secondary_action_var = secondary_action_dropdowns_vars[i]
 
         try:
             x_str, y_str = entry.get().split(',')
@@ -110,17 +123,15 @@ def update_locations_from_gui():
             y = int(y_str.strip())
             primary_action = primary_action_var.get()
 
-            # Determine secondary action based on primary and dropdown selection
-            secondary_action = None # Default to no secondary action
+            secondary_action = None
             if primary_action == "Double-Click":
                 selected_secondary = secondary_action_var.get()
                 if selected_secondary == "Copy":
                     secondary_action = "Copy"
                 elif selected_secondary == "Paste":
                     secondary_action = "Paste"
-                # If "Nothing" is selected, secondary_action remains None, which is correct
 
-            new_locations.append((x, y, primary_action, secondary_action)) # Store all four
+            new_locations.append((x, y, primary_action, secondary_action))
         except ValueError:
             print("Input Error: Please ensure all coordinate fields contain 'x, y' (e.g., '100, 200').")
             return False
@@ -136,13 +147,23 @@ def update_mouse_position():
 
 def start_script():
     """Starts the mouse actions and key listener in separate threads."""
-    global mouse_thread, key_listener_thread, cycle_wait_time, click_wait_time, stop_flag, timing_entry, click_timing_entry
+    global mouse_thread, key_listener_thread, cycle_wait_time, click_wait_time, num_cycles, stop_flag, timing_entry, click_timing_entry, num_cycles_entry
 
     if mouse_thread and mouse_thread.is_alive():
         print("Info: Script is already running.")
         return
 
     if not update_locations_from_gui():
+        return
+
+    # Update num_cycles (NEW)
+    try:
+        num_cycles_val = int(num_cycles_entry.get())
+        if num_cycles_val < -1:
+            raise ValueError("Number of cycles must be -1 (for infinite) or a non-negative number.")
+        num_cycles = num_cycles_val
+    except ValueError:
+        print("Input Error: Please enter a valid integer for number of cycles (-1 for infinite).")
         return
 
     # Update cycle_wait_time
@@ -163,7 +184,7 @@ def start_script():
         print("Input Error: Please enter a valid non-negative number for click timing (in seconds).")
         return
 
-    print(f"Starting Mouse Actions with Cycle Wait: {cycle_wait_time}s, Click Wait: {click_wait_time}s")
+    print(f"Starting Mouse Actions for {num_cycles if num_cycles != -1 else 'infinite'} cycles. Cycle Wait: {cycle_wait_time}s, Click Wait: {click_wait_time}s")
     stop_flag = False
     mouse_thread = threading.Thread(target=mouse_actions_thread, daemon=True)
     mouse_thread.start()
@@ -245,7 +266,7 @@ def create_coordinate_entries(num_locations_str):
 
         tk.Label(frame, text=f"Location {i+1}:").pack(side=tk.LEFT)
 
-        entry = tk.Entry(frame, width=15) # Smaller to make room for dropdown and secondary dropdown
+        entry = tk.Entry(frame, width=15)
         entry.pack(side=tk.LEFT, padx=(0, 5))
         coordinate_entries.append(entry)
 
@@ -260,7 +281,7 @@ def create_coordinate_entries(num_locations_str):
         # Bind the combobox selection to toggle the secondary action dropdown visibility
         action_dropdown.bind('<<ComboboxSelected>>', lambda event, idx=i: toggle_secondary_action_visibility(idx))
 
-        # NEW: Secondary action dropdown (Combobox) for Copy/Paste/Nothing
+        # Secondary action dropdown (Combobox) for Copy/Paste/Nothing
         secondary_action_var = tk.StringVar(root)
         secondary_action_var.set("Nothing") # Default: "Nothing" selected
         secondary_action_dropdowns_vars.append(secondary_action_var)
@@ -275,11 +296,11 @@ def create_coordinate_entries(num_locations_str):
 
 def create_gui():
     """Creates the main Tkinter GUI window."""
-    global root, mouse_pos_label, timing_entry, click_timing_entry, coordinate_input_frame
+    global root, mouse_pos_label, timing_entry, click_timing_entry, num_cycles_entry, coordinate_input_frame
 
     root = tk.Tk()
     root.title("Mouse Automation Tool")
-    root.geometry("680x800") # Keeping the same width for now, might need adjustment
+    root.geometry("680x850") # Adjusted window size to accommodate new element
 
     # Mouse Position Display
     mouse_pos_label = tk.Label(root, text="Current Mouse Position: X=?, Y=?", font=("Arial", 12, "bold"))
@@ -302,6 +323,12 @@ def create_gui():
 
     # Initially create default 4 entries
     create_coordinate_entries(num_locations_entry.get())
+
+    # NEW: Number of Cycles Input
+    tk.Label(root, text="Number of Cycles (-1 for infinite):", font=("Arial", 12, "bold")).pack(pady=10)
+    num_cycles_entry = tk.Entry(root, width=30)
+    num_cycles_entry.insert(0, str(num_cycles)) # Default to infinite
+    num_cycles_entry.pack(pady=5)
 
     # Timing Input (Cycle Wait Time)
     tk.Label(root, text="Wait Time Between Cycles (seconds):", font=("Arial", 12, "bold")).pack(pady=10)
